@@ -3,11 +3,14 @@ from collections.abc import AsyncGenerator
 from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
+from langgraph.store.memory import InMemoryStore
+from langgraph.checkpoint.memory import InMemorySaver
 
 load_dotenv()
 
 _agent = None
-
+store = InMemoryStore()
+checkpointer = InMemorySaver()
 
 def _get_agent():
     global _agent
@@ -17,6 +20,8 @@ def _get_agent():
             model=model,
             tools=[],
             system_prompt="You are a helpful learning assistant.",
+            store=store, 
+            checkpointer=checkpointer,
         )
     return _agent
 
@@ -27,6 +32,7 @@ async def stream_chat(messages: list[dict]) -> AsyncGenerator[str, None]:
     async for chunk, _ in agent.astream(
         {"messages": langchain_messages},
         stream_mode="messages",
+        config={"configurable": {"thread_id": "1"}}
     ):
         if not hasattr(chunk, "content") or not chunk.content:
             continue
