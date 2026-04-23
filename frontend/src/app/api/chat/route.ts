@@ -1,12 +1,27 @@
+import { cookies } from "next/headers";
+
 export async function POST(request: Request) {
-  const { messages } = await request.json();
+  const { conversation_id, messages } = await request.json();
+
+  const cookieStore = await cookies();
+  const token = cookieStore.get("auth_token")?.value;
+
+  if (!token) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
   const res = await fetch(`${backendUrl}/api/chat/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ conversation_id, messages }),
   });
 
   if (!res.ok) {

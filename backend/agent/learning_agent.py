@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 
 from langchain.agents import create_agent
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -25,14 +26,26 @@ def _get_agent():
         )
     return _agent
 
+@dataclass
+class LearningAgentModel:
+    messages: list[dict]
+    # 会话id
+    thread_id: str | None = None
+    # 用户id
+    user_id: int | None = None
 
-async def stream_chat(messages: list[dict]) -> AsyncGenerator[str, None]:
+async def stream_chat(agent_model: LearningAgentModel) -> AsyncGenerator[str, None]:
     agent = _get_agent()
-    langchain_messages = [(m["role"], m["content"]) for m in messages]
+    langchain_messages = [(m["role"], m["content"]) for m in agent_model.messages]
     async for chunk, _ in agent.astream(
         {"messages": langchain_messages},
         stream_mode="messages",
-        config={"configurable": {"thread_id": "1"}}
+        config={
+            "configurable": {
+                "thread_id": agent_model.thread_id or "default",
+                "user_id": agent_model.user_id,
+            }
+        },
     ):
         if not hasattr(chunk, "content") or not chunk.content:
             continue
