@@ -6,5 +6,6 @@ sqlalchemy
 alembic
 asyncpg
 psycopg2-binary
+pgvector>=0.3.0
 bcrypt
 python-jose[cryptography]
