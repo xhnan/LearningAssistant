@@ -28,13 +28,24 @@ pgvector>=0.3.0
 
 ```python
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import types
 
-# 在 run_migrations_online 中添加
 def render_item(type_, obj, autogen_context):
+    """自定义类型渲染，让 Alembic 能生成 Vector(N) 而非报 unknown type"""
     if type_ == "type" and isinstance(obj, Vector):
         return f"Vector({obj.dim})"
-    return False  # 使用默认渲染
+    return False  # fallback to default renderer
+```
+
+在 `run_migrations_online()` 和 `run_migrations_offline()` 中都需要将 `render_item` 传给 `context.configure()`：
+
+```python
+# 两处 run_migrations_* 函数中均添加：
+with connectable.connect() as connection:
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        render_item=render_item,  # <-- add this
+    )
 ```
 
 ## Table: user_profiles
