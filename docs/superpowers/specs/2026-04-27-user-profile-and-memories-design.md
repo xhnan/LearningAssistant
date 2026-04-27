@@ -41,7 +41,7 @@ One-to-many with `users`, stores retrievable long-term memories with embeddings.
 | user_id | Integer | FK → users.id, not null | Owning user |
 | content | Text | not null | Memory text content |
 | memory_type | String(50) | not null | Type tag: "preference", "knowledge", "mistake", etc. |
-| embedding | Vector(1536) | nullable | pgvector embedding (1536 dims) |
+| embedding | Vector(1536) | nullable | pgvector embedding (1536 dims). Nullable because embedding may be generated asynchronously after memory creation. Memories without embedding cannot participate in vector search and must use list/filter queries instead. |
 | source_message_id | Integer | FK → messages.id, nullable | Origin message for traceability |
 | importance | Float | default 0.5 | Importance score 0~1 |
 | is_active | Boolean | default True | Soft delete flag |
@@ -55,12 +55,24 @@ One-to-many with `users`, stores retrievable long-term memories with embeddings.
 
 ### Retrieval
 
+**Vector similarity search** (only memories with embedding):
+
 ```sql
 SELECT content, importance
 FROM user_memories
-WHERE user_id = :uid AND is_active = True
+WHERE user_id = :uid AND is_active = True AND embedding IS NOT NULL
 ORDER BY embedding <=> :query_vector
 LIMIT :top_k;
+```
+
+**List/filter query** (all memories, including those without embedding):
+
+```sql
+SELECT content, importance, memory_type
+FROM user_memories
+WHERE user_id = :uid AND is_active = True
+ORDER BY importance DESC, updated_at DESC
+LIMIT :limit;
 ```
 
 ## File Organization
