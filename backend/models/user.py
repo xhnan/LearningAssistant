@@ -1,7 +1,14 @@
+from __future__ import annotations
+
 from datetime import datetime
+from typing import TYPE_CHECKING
+
 from sqlalchemy import String, Boolean, Integer, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from db.base import Base
+
+if TYPE_CHECKING:
+    from models.profile import UserProfile
 
 
 class User(Base):
@@ -19,6 +26,7 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=datetime.now, onupdate=datetime.now)
 
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    profile: Mapped["UserProfile | None"] = relationship(back_populates="user", uselist=False)
 
 
 class Conversation(Base):
