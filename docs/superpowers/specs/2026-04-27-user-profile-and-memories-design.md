@@ -55,7 +55,7 @@ One-to-one with `users`, stores stable user attributes extracted by AI from conv
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | Integer | PK, autoincrement | Primary key |
-| user_id | Integer | FK → users.id, unique, not null | Owning user |
+| user_id | Integer | FK → users.id, unique, not null, ondelete CASCADE | Owning user. Delete profile when user is deleted. |
 | learning_level | String(50) | nullable | e.g. "beginner", "intermediate" |
 | learning_goals | Text | nullable | Free-text learning objectives |
 | preferred_style | String(50) | nullable | e.g. "example-driven", "formula-based" |
@@ -72,11 +72,11 @@ One-to-many with `users`, stores retrievable long-term memories with embeddings.
 | Column | Type | Constraints | Description |
 |---|---|---|---|
 | id | Integer | PK, autoincrement | Primary key |
-| user_id | Integer | FK → users.id, not null | Owning user |
+| user_id | Integer | FK → users.id, not null, ondelete CASCADE | Owning user. Delete all memories when user is deleted. |
 | content | Text | not null | Memory text content |
 | memory_type | String(50) | not null | Type tag: "preference", "knowledge", "mistake", etc. |
 | embedding | Vector(1536) | nullable | pgvector embedding (1536 dims). Nullable because embedding may be generated asynchronously after memory creation. Memories without embedding cannot participate in vector search and must use list/filter queries instead. |
-| source_message_id | Integer | FK → messages.id, nullable | Origin message for traceability |
+| source_message_id | Integer | FK → messages.id, nullable, ondelete SET NULL | Origin message for traceability. Memory survives message deletion, link just clears. |
 | importance | Float | default 0.5 | Importance score 0~1 |
 | is_active | Boolean | default True | Soft delete flag |
 | created_at | DateTime(tz) | default now | Creation time |
