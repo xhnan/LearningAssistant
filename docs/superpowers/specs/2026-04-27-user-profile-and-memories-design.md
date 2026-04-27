@@ -115,6 +115,26 @@ LIMIT :limit;
 - Migrations: New Alembic migration for both tables + pgvector extension
 - APIs: `backend/api/profile.py` (CRUD), `backend/api/memories.py` (CRUD + vector search endpoint)
 
+### Alembic Model Registration
+
+`alembic/env.py` 的 `target_metadata` 依赖所有模型被 import 后才会注册到 `Base.metadata`。需要在该文件中添加新模型的导入：
+
+```python
+from models.user import User, Conversation, Message
+from models.profile import UserProfile      # new
+from models.memory import UserMemory        # new
+```
+
+### User Model Relationships
+
+在 `User` 模型上补充 relationships：
+
+```python
+# backend/models/user.py
+profile = relationship("UserProfile", back_populates="user", uselist=False)
+memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
+```
+
 ## Scope Boundaries
 
 - This spec covers: table definitions, SQLAlchemy models, Alembic migration, basic CRUD APIs
