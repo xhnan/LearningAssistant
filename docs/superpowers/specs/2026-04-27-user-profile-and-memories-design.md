@@ -9,10 +9,33 @@ Add two tables to support AI long-term memory for the learning assistant:
 
 ## Tech Stack
 
-- PostgreSQL + pgvector extension
+- PostgreSQL + pgvector extension (需要数据库侧 `CREATE EXTENSION IF NOT EXISTS vector`)
 - SQLAlchemy 2.x async ORM
-- Alembic migrations
+- `pgvector` Python 包 (`pgvector.sqlalchemy.Vector`) — 提供 SQLAlchemy 的 Vector 列类型
+- Alembic migrations (需要 `render_item` 自定义渲染以支持 Vector 类型)
 - Vector dimension: 1536
+
+### New Dependencies
+
+```text
+# backend/requirements.txt 新增
+pgvector>=0.3.0
+```
+
+### Alembic Configuration
+
+`alembic/env.py` 需要注册 pgvector 的类型渲染器，确保 autogenerate 能正确识别和渲染 `Vector` 列类型：
+
+```python
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import types
+
+# 在 run_migrations_online 中添加
+def render_item(type_, obj, autogen_context):
+    if type_ == "type" and isinstance(obj, Vector):
+        return f"Vector({obj.dim})"
+    return False  # 使用默认渲染
+```
 
 ## Table: user_profiles
 
