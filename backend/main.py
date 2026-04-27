@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from api.auth import router as auth_router
 from api.conversations import router as conversations_router
 from api.profile import router as profile_router
+from api.memories import router as memories_router
 from api.deps import get_current_active_user
 from agent.learning_agent import LearningAgentModel, stream_chat
 from db.session import get_db
@@ -21,6 +22,7 @@ app = FastAPI()
 app.include_router(auth_router)
 app.include_router(conversations_router)
 app.include_router(profile_router)
+app.include_router(memories_router)
 
 app.add_middleware(
     CORSMiddleware,
