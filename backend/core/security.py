@@ -44,7 +44,8 @@ def _get_secret_key() -> str:
 
 
 def create_access_token(subject: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=30)
+    expire_minutes = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "43200"))
+    expire = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
     payload = {
         "sub": subject,
         "exp": expire,

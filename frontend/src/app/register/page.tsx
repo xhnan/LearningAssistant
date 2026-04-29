@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -40,6 +41,7 @@ export default function RegisterPage() {
       router.replace("/");
     } catch {
       setError("网络错误，请稍后重试");
+      toast.error("网络连接失败，请检查网络后重试");
     } finally {
       setLoading(false);
     }

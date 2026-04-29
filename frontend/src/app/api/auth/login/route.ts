@@ -1,12 +1,13 @@
 export async function POST(request: Request) {
   const { username, password } = await request.json();
+  const normalizedUsername = username.trim();
 
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
 
   const res = await fetch(`${backendUrl}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ username: normalizedUsername, password }),
   });
 
   const data = await res.json();

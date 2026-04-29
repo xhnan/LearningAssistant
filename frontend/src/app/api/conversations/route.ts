@@ -8,10 +8,23 @@ async function getAuthToken() {
 }
 
 function unauthorizedResponse() {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
+  const response = new Response(JSON.stringify({ error: "Unauthorized" }), {
     status: 401,
     headers: { "Content-Type": "application/json" },
   });
+  response.headers.set("Set-Cookie", "auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  return response;
+}
+
+function proxyResponse(body: string, res: Response) {
+  const response = new Response(res.status === 204 || res.status === 304 ? null : body, {
+    status: res.status,
+    headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
+  });
+  if (res.status === 401) {
+    response.headers.set("Set-Cookie", "auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+  }
+  return response;
 }
 
 export async function GET() {
@@ -22,10 +35,7 @@ export async function GET() {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  return new Response(await res.text(), {
-    status: res.status,
-    headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
-  });
+  return proxyResponse(await res.text(), res);
 }
 
 export async function POST() {
@@ -37,8 +47,5 @@ export async function POST() {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  return new Response(await res.text(), {
-    status: res.status,
-    headers: { "Content-Type": res.headers.get("Content-Type") || "application/json" },
-  });
+  return proxyResponse(await res.text(), res);
 }

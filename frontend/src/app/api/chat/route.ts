@@ -7,10 +7,12 @@ export async function POST(request: Request) {
   const token = cookieStore.get("auth_token")?.value;
 
   if (!token) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    const response = new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
+    response.headers.set("Set-Cookie", "auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    return response;
   }
 
   const backendUrl = process.env.BACKEND_URL || "http://localhost:8000";
@@ -25,10 +27,14 @@ export async function POST(request: Request) {
   });
 
   if (!res.ok) {
-    return new Response(JSON.stringify({ error: "Backend request failed" }), {
+    const response = new Response(JSON.stringify({ error: "Backend request failed" }), {
       status: res.status,
       headers: { "Content-Type": "application/json" },
     });
+    if (res.status === 401) {
+      response.headers.set("Set-Cookie", "auth_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+    }
+    return response;
   }
 
   return new Response(res.body, {

@@ -1,13 +1,21 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { toast } from "sonner";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+}
+
+interface StoredMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
 }
 
 interface Conversation {
@@ -24,18 +32,32 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  const redirectToLogin = useCallback(() => {
+    router.replace("/login");
+  }, [router]);
+
   // Fetch conversations on mount
   useEffect(() => {
     fetch("/api/conversations")
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => {
+        if (res.status === 401) {
+          redirectToLogin();
+          return [];
+        }
+        return res.ok ? res.json() : [];
+      })
       .then((data: Conversation[]) => setConversations(data))
-      .catch(() => {});
-  }, []);
+      .catch(() => {
+        toast.error("加载会话列表失败，请刷新页面重试");
+      });
+  }, [redirectToLogin]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -50,18 +72,47 @@ export default function ChatPage() {
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
-    router.replace("/login");
+    redirectToLogin();
   };
 
   const createConversation = async (): Promise<string | null> => {
     try {
       const res = await fetch("/api/conversations", { method: "POST" });
+      if (res.status === 401) {
+        redirectToLogin();
+        return null;
+      }
       if (!res.ok) return null;
       const conv: Conversation = await res.json();
       setConversations((prev) => [conv, ...prev]);
       return conv.conversation_id;
     } catch {
+      toast.error("创建会话失败，请重试");
       return null;
+    }
+  };
+
+  const generateConversationDescription = async (conversationId: string, firstMessage: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ first_message: firstMessage }),
+      });
+
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+
+      if (!res.ok) throw new Error("Failed to generate conversation description");
+
+      const updated: Conversation = await res.json();
+      setConversations((prev) =>
+        prev.map((conv) => (conv.conversation_id === conversationId ? updated : conv))
+      );
+    } catch {
+      toast.error("生成会话标题失败");
     }
   };
 
@@ -73,10 +124,78 @@ export default function ChatPage() {
     }
   };
 
+  const loadMessages = async (conversationId: string) => {
+    setLoadingMessages(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/messages`);
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok) throw new Error("Failed to load messages");
+
+      const data: StoredMessage[] = await res.json();
+      setMessages(
+        data
+          .filter((message) => message.role === "user" || message.role === "assistant")
+          .map((message) => ({
+            id: String(message.id),
+            role: message.role,
+            content: message.content,
+          }))
+      );
+    } catch {
+      toast.error("加载消息失败，请重试");
+      setMessages([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
   const switchConversation = (id: string) => {
     setActiveId(id);
     setMessages([]);
     setStreamingContent("");
+    void loadMessages(id);
+  };
+
+  const deleteConversation = async (conversationId: string) => {
+    const conversation = conversations.find((conv) => conv.conversation_id === conversationId);
+    const title = conversation?.description || "新会话";
+    if (!window.confirm(`确定要删除「${title}」吗？`)) return;
+
+    setDeletingId(conversationId);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}`, { method: "DELETE" });
+      if (res.status === 401) {
+        redirectToLogin();
+        return;
+      }
+      if (!res.ok && res.status !== 404) throw new Error("Failed to delete conversation");
+
+      const nextConversations = conversations.filter(
+        (conv) => conv.conversation_id !== conversationId
+      );
+      setConversations(nextConversations);
+
+      if (activeId === conversationId) {
+        setStreamingContent("");
+        const nextConversation = nextConversations[0];
+        if (nextConversation) {
+          setActiveId(nextConversation.conversation_id);
+          setMessages([]);
+          void loadMessages(nextConversation.conversation_id);
+        } else {
+          setActiveId(null);
+          setMessages([]);
+          setLoadingMessages(false);
+        }
+      }
+    } catch {
+      toast.error("删除会话失败，请重试");
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const sendMessage = async () => {
@@ -89,6 +208,12 @@ export default function ChatPage() {
       convId = await createConversation();
       if (!convId) return;
       setActiveId(convId);
+    }
+
+    const currentConversation = conversations.find((conv) => conv.conversation_id === convId);
+    const shouldSetDescription = messages.length === 0 && !currentConversation?.description;
+    if (shouldSetDescription) {
+      void generateConversationDescription(convId, text);
     }
 
     const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text };
@@ -110,7 +235,7 @@ export default function ChatPage() {
       });
 
       if (res.status === 401) {
-        router.replace("/login");
+        redirectToLogin();
         return;
       }
 
@@ -149,9 +274,10 @@ export default function ChatPage() {
         { id: crypto.randomUUID(), role: "assistant", content: accumulated || "暂无回复" },
       ]);
     } catch {
+      toast.error("发送消息失败，请检查网络连接");
       setMessages((prev) => [
         ...prev,
-        { id: crypto.randomUUID(), role: "assistant", content: "抱歉，发生了错误，请稍后重试。" },
+        { id: crypto.randomUUID(), role: "assistant", content: "抱歉，消息发送失败，请稍后重试。" },
       ]);
     } finally {
       setStreamingContent("");
@@ -195,16 +321,35 @@ export default function ChatPage() {
               <ul>
                 {conversations.map((conv) => (
                   <li key={conv.conversation_id}>
-                    <button
-                      onClick={() => switchConversation(conv.conversation_id)}
-                      className={`w-full px-4 py-2.5 text-left text-sm transition truncate ${
+                    <div
+                      className={`group flex items-center ${
                         conv.conversation_id === activeId
-                          ? "bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                          : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                          ? "bg-blue-50 dark:bg-blue-900/20"
+                          : "hover:bg-zinc-100 dark:hover:bg-zinc-800"
                       }`}
                     >
-                      {conv.description || "新会话"}
-                    </button>
+                      <button
+                        onClick={() => switchConversation(conv.conversation_id)}
+                        className={`min-w-0 flex-1 truncate px-4 py-2.5 text-left text-sm transition ${
+                          conv.conversation_id === activeId
+                            ? "text-blue-700 dark:text-blue-400"
+                            : "text-zinc-700 dark:text-zinc-300"
+                        }`}
+                      >
+                        {conv.description || "新会话"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteConversation(conv.conversation_id)}
+                        disabled={deletingId === conv.conversation_id}
+                        title="删除会话"
+                        className="mr-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-zinc-400 opacity-0 transition hover:bg-red-50 hover:text-red-600 disabled:opacity-40 group-hover:opacity-100 dark:hover:bg-red-950/30 dark:hover:text-red-400"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75V4.5H3.75a.75.75 0 0 0 0 1.5h.33l.71 9.22A3 3 0 0 0 7.78 18h4.44a3 3 0 0 0 2.99-2.78L15.92 6h.33a.75.75 0 0 0 0-1.5H14v-.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM7.5 4.5v-.75c0-.69.56-1.25 1.25-1.25h2.5c.69 0 1.25.56 1.25 1.25v.75h-5Zm1 4.25a.75.75 0 0 0-1.5 0v5a.75.75 0 0 0 1.5 0v-5Zm4.5 0a.75.75 0 0 0-1.5 0v5a.75.75 0 0 0 1.5 0v-5Z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -230,7 +375,7 @@ export default function ChatPage() {
           <button
             onClick={() => setSidebarOpen((v) => !v)}
             className="mr-3 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-            title={sidebarOpen ? "收起侧栏" : "展开侧栏"}
+            title={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5">
               <path fillRule="evenodd" d="M2 4.75A.75.75 0 0 1 2.75 4h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 4.75ZM2 10a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75A.75.75 0 0 1 2 10Zm0 5.25a.75.75 0 0 1 .75-.75h14.5a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" />
@@ -244,15 +389,21 @@ export default function ChatPage() {
         {/* Messages */}
         <main className="flex-1 overflow-y-auto px-4 py-6">
           <div className="mx-auto max-w-3xl space-y-6">
-            {messages.length === 0 && !isLoading && (
-              <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-                <div className="mb-4 text-5xl">🎓</div>
-                <h2 className="mb-2 text-xl font-semibold text-zinc-700 dark:text-zinc-300">学习助手</h2>
-                <p className="max-w-sm text-sm text-zinc-400">有任何学习上的问题？随时提问，我会尽力帮助你。</p>
+            {loadingMessages && (
+              <div className="flex min-h-[60vh] items-center justify-center text-sm text-zinc-400">
+                正在加载消息...
               </div>
             )}
 
-            {messages.map((msg) => (
+            {!loadingMessages && messages.length === 0 && !isLoading && (
+              <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+                <div className="mb-4 text-5xl">AI</div>
+                <h2 className="mb-2 text-xl font-semibold text-zinc-700 dark:text-zinc-300">学习助手</h2>
+                <p className="max-w-sm text-sm text-zinc-400">有任何学习上的问题，都可以随时提问。</p>
+              </div>
+            )}
+
+            {!loadingMessages && messages.map((msg) => (
               <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                 {msg.role === "assistant" && (
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-sm text-white">
@@ -318,7 +469,7 @@ export default function ChatPage() {
                 adjustHeight();
               }}
               onKeyDown={handleKeyDown}
-              placeholder="输入你的问题…"
+              placeholder="输入你的问题..."
               rows={1}
               className="flex-1 resize-none rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-2.5 text-sm text-zinc-900 placeholder-zinc-400 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-blue-500"
             />
@@ -338,3 +489,4 @@ export default function ChatPage() {
     </div>
   );
 }
+
