@@ -28,6 +28,8 @@ def _get_agent():
         )
     return _agent
 
+
+
 @dataclass
 class LearningAgentModel:
     messages: list[dict]
